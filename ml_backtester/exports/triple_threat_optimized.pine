@@ -1,0 +1,46 @@
+
+//@version=5
+strategy("triple_threat Optimized", overlay=true, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=1)
+
+// --- Optimized Parameters ---
+sl_atr_multiplier = input.float(2.417992110316982, title="SL ATR Multiplier")
+tp_atr_multiplier = input.float(4.79637847609745, title="TP ATR Multiplier")
+ema_len = input.int(200, title="EMA Length")
+macd_fast = input.int(12, title="MACD Fast Length")
+macd_slow = input.int(26, title="MACD Slow Length")
+macd_signal = input.int(9, title="MACD Signal Length")
+stoch_k = input.int(14, title="Stochastic %K")
+stoch_d = input.int(3, title="Stochastic %D")
+stoch_smooth = input.int(3, title="Stochastic Smoothing")
+atr_len = input.int(14, title="ATR Length")
+
+// --- Indicators ---
+ema200 = ta.ema(close, ema_len)
+[macd_line, signal_line, _] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+stoch_k_line = ta.sma(ta.stoch(close, high, low, stoch_k), stoch_smooth)
+atr = ta.atr(atr_len)
+
+// --- Plotting Indicators ---
+plot(ema200, title="EMA 200", color=color.orange)
+
+// --- Strategy Conditions ---
+long_trend = close > ema200
+long_momentum = macd_line > signal_line
+long_entry = ta.crossover(stoch_k_line, 20)
+
+short_trend = close < ema200
+short_momentum = macd_line < signal_line
+short_entry = ta.crossunder(stoch_k_line, 80)
+
+// --- Execution Logic ---
+if (long_trend and long_momentum and long_entry)
+    sl = close - (atr * sl_atr_multiplier)
+    tp = close + (atr * tp_atr_multiplier)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", from_entry="Long", stop=sl, limit=tp)
+
+if (short_trend and short_momentum and short_entry)
+    sl = close + (atr * sl_atr_multiplier)
+    tp = close - (atr * tp_atr_multiplier)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", from_entry="Short", stop=sl, limit=tp)

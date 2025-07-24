@@ -1,0 +1,22 @@
+# Core Libraries
+pandas
+numpy==1.26.4
+pyyaml
+loguru
+
+# Machine Learning & Optimization
+torch # For deep learning, works well on Apple Silicon
+optuna
+scikit-learn
+Flask
+
+# High-Performance Computing
+pyarrow # For Parquet file support
+numba # For JIT compilation
+
+# Analytics & Visualization
+plotly
+seaborn
+matplotlib
+# Technical Analysis
+pandas-ta

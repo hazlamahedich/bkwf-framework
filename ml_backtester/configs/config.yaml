@@ -1,0 +1,75 @@
+# --- Master Configuration for the Backtesting Framework ---
+
+run_mode: 'optimize_and_backtest' # 'train', 'optimize', or 'backtest'
+
+
+# 1. Data Agent Configuration
+data_path: 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'
+
+# 2. Feature Engineering Configuration
+feature_engineering:
+  indicators:
+    - {name: 'ema', params: {length: 200}}
+    - {name: 'macd'}
+    - {name: 'rsi'}
+    - {name: 'stoch'}
+    - {name: 'atr'}
+  scaling: null # 'standard' or null
+
+# 3. Strategy Configuration
+strategy:
+  name:
+    - 'triple_threat'
+    - 'bounce_back'
+    - 'cnn_lstm_strategy'
+  # Strategy-specific parameters would go here if needed
+  # params:
+  #   ema_period: 200
+
+# 4. Modeling Configuration
+modeling:
+  model_save_path: 'ml_backtester/models/trained_model_pytorch'
+  look_back: 60
+  epochs: 5 # Lower for a quick initial run
+  batch_size: 32
+
+# 5. Optimization Configuration
+optimization:
+  enabled: false # Set to true to run optimization
+  n_trials: 50
+  params:
+    # Define parameter search space for the selected strategy
+    sl_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+    tp_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+
+# 6. Risk Management Configuration
+risk_management:
+  risk_per_trade: 0.01
+  sl_atr_multiplier: 2.0
+  tp_atr_multiplier: 3.0
+  trailing_stop:
+    enabled: true
+    atr_multiplier: 1.5
+
+# 7. Execution Configuration
+execution:
+  slippage_percent: 0.0005
+
+# 8. Backtesting Configuration
+backtesting:
+  mode: 'iterative'
+  initial_capital: 100000
+
+# 9. Analytics Configuration
+analytics:
+  report_path: 'ml_backtester/reports'
+
+# 10. Export Configuration
+export:
+  enabled: true
+  path: 'ml_backtester/exports'
+  formats: ['mt5', 'pinescript'] # Supported formats: 'mt5', 'pinescript'
+
+# 10. Logging Configuration
+logging:
+  level: 'INFO' # DEBUG, INFO, WARNING, ERROR

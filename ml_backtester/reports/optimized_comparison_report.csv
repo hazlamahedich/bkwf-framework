@@ -1,0 +1,4 @@
+Strategy,Total Return,Sharpe Ratio,Max Drawdown,Total Trades,Win Rate
+triple_threat,0.00%,0.0,-0.57%,17,52.94%
+bounce_back,0.00%,0.0,-2.66%,21,28.57%
+cnn_lstm_strategy,0.00%,0.0,-0.97%,20,35.00%
