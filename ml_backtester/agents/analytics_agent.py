@@ -14,37 +14,44 @@ class AnalyticsAgent:
         Initializes the AnalyticsAgent.
 
         Args:
-            config (Dict[str, Any]): Configuration dictionary. Expected keys:
-                'analytics': {
-                    'report_path': 'ml_backtester/reports/'
-                }
+            config (Dict[str, Any]): The main configuration dictionary.
         """
-        self.config = config.get('analytics', {})
-        self.report_path = Path(self.config.get('report_path', 'ml_backtester/reports'))
+        self.config = config
+        self.analytics_config = self.config.get('analytics', {})
+        self.report_path = Path(self.analytics_config.get('report_path', 'ml_backtester/reports'))
         self.report_path.mkdir(exist_ok=True)
+        self.symbol = self.config.get('symbol')
+        self.timeframe = self.config.get('timeframe')
 
     def execute(self, results: Dict[str, Any], report_name: str, is_optimization: bool = False) -> str:
         """
         Generates and saves analytics reports and visualizations.
-
         Args:
-            results (Dict[str, Any]): A dictionary of results. For single runs, keys are metrics.
-                                     For comparison runs, keys are strategy names.
+            results (Dict[str, Any]): A dictionary of results.
             report_name (str): The base name for the report file(s).
             is_optimization (bool): Flag to indicate if the results are from an optimization run.
-        
         Returns:
             str: The name of the best performing strategy, or None.
         """
         logging.info("AnalyticsAgent: Generating reports...")
         best_strategy = None
 
-        if is_optimization:
+        # In a comparison run, results dict contains strategy names as keys
+        if not is_optimization and isinstance(results, dict) and any(isinstance(v, dict) for v in results.values()):
+            # This handles both regular comparison and post-optimization comparison
+            for strategy_name, strategy_results in results.items():
+                if "equity_curve" in strategy_results:
+                    self._plot_equity_curve(strategy_results['equity_curve'], strategy_name)
+                if "best_params" in strategy_results:
+                    self._save_optimization_results(strategy_results, strategy_name)
+            
+            best_strategy = self._generate_comparison_report(results, report_name)
+
+        elif is_optimization: # Direct optimization run
             self._save_optimization_results(results, report_name)
+        
         elif "equity_curve" in results: # Single backtest run
             self._plot_equity_curve(results['equity_curve'], report_name)
-        else: # Comparison run
-            best_strategy = self._generate_comparison_report(results, report_name)
 
         logging.info(f"Reports saved to '{self.report_path}'.")
         return best_strategy
@@ -63,7 +70,8 @@ class AnalyticsAgent:
             template='plotly_dark'
         )
         
-        report_file = self.report_path / f"{strategy_name}_equity_curve.html"
+        filename_base = self._get_filename_base(strategy_name)
+        report_file = self.report_path / f"{filename_base}_equity_curve.html"
         fig.write_html(report_file)
         logging.info(f"Equity curve plot saved to '{report_file}'.")
 
@@ -75,7 +83,8 @@ class AnalyticsAgent:
         
         best_params = results.get('best_params')
         if best_params:
-            report_file = self.report_path / f"{strategy_name}_best_params.json"
+            filename_base = self._get_filename_base(strategy_name)
+            report_file = self.report_path / f"{filename_base}_best_params.json"
             with open(report_file, 'w') as f:
                 json.dump(best_params, f, indent=4)
             logging.info(f"Best optimization parameters saved to '{report_file}'.")
@@ -104,7 +113,8 @@ class AnalyticsAgent:
         df = pd.DataFrame(comparison_data)
         df = df.set_index('Strategy')
         
-        report_file = self.report_path / f"{report_name}_report.csv"
+        filename_base = self._get_filename_base(report_name)
+        report_file = self.report_path / f"{filename_base}_report.csv"
         df.to_csv(report_file)
         logging.info(f"Comparison report saved to '{report_file}'.")
 
@@ -113,6 +123,23 @@ class AnalyticsAgent:
         logging.info(f"Best performing strategy: '{best_strategy}' with Sharpe Ratio: {df.loc[best_strategy]['Sharpe Ratio']:.2f}")
         
         return best_strategy
+
+    def _get_filename_base(self, name: str) -> str:
+        """Constructs a filename base from symbol, timeframe, and a given name."""
+        parts = []
+        if self.symbol:
+            parts.append(self.symbol)
+        if self.timeframe:
+            parts.append(self.timeframe)
+        parts.append(name)
+
+        # If the strategy is the ML one, add the model type to the filename
+        if 'cnn_lstm_strategy' in name:
+            model_type = self.config.get('modeling', {}).get('model_type')
+            if model_type:
+                parts.append(model_type)
+                
+        return "_".join(parts)
 
 if __name__ == '__main__':
     # Example usage for testing the AnalyticsAgent

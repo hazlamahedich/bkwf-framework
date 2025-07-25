@@ -1,5 +1,6 @@
 import yaml
-from typing import Dict, Any
+import json
+from typing import Dict, Any, Optional
 import logging
 
 from .data_agent import DataAgent
@@ -19,20 +20,48 @@ class CoordinatorAgent:
     The master agent that orchestrates the entire backtesting pipeline.
     """
 
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, params_file: Optional[str] = None):
         """
         Initializes the CoordinatorAgent.
 
         Args:
             config_path (str): The path to the main YAML configuration file.
+            params_file (Optional[str]): Path to a JSON file with optimal parameters.
         """
         self.config = self._load_config(config_path)
+        if params_file:
+            self._override_config_with_params(params_file)
         self._setup_logging()
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Loads the YAML configuration file."""
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
+
+    def _override_config_with_params(self, params_file: str):
+        """Overrides config with parameters from a JSON file."""
+        logging.info(f"Loading optimal parameters from {params_file}...")
+        try:
+            with open(params_file, 'r') as f:
+                params = json.load(f)
+            
+            best_params = params.get('best_params', {})
+            
+            # Separate strategy and risk params
+            strategy_params = {k: v for k, v in best_params.items() if k not in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+            risk_params = {k: v for k, v in best_params.items() if k in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+
+            if 'params' not in self.config['strategy']:
+                self.config['strategy']['params'] = {}
+            self.config['strategy']['params'].update(strategy_params)
+            self.config['risk_management'].update(risk_params)
+            
+            logging.info(f"Config overridden with parameters: {best_params}")
+
+        except FileNotFoundError:
+            logging.error(f"Parameters file not found: {params_file}. Using default config.")
+        except Exception as e:
+            logging.error(f"Error loading parameters file: {e}. Using default config.")
 
     def _setup_logging(self):
         """Configures the logging for the framework."""
@@ -51,93 +80,94 @@ class CoordinatorAgent:
 
         # --- Common Steps: Data Loading and Feature Engineering ---
         data_agent = DataAgent(self.config)
-        market_data = data_agent.execute()
-
-        feature_agent = FeatureEngineeringAgent(self.config)
-        featured_data = feature_agent.execute(market_data)
+        market_data, symbol, timeframe = data_agent.execute()
+        
+        # Update the main config with the loaded symbol and timeframe
+        self.config['symbol'] = symbol
+        self.config['timeframe'] = timeframe
 
         if run_mode == 'train':
-            # --- Training Mode ---
+            feature_agent = FeatureEngineeringAgent(self.config)
+            featured_data = feature_agent.execute(market_data)
             modeling_agent = ModelingAgent(self.config)
             modeling_agent.execute(featured_data)
         
         elif run_mode == 'optimize':
-            # --- Optimization Mode ---
             strategy_agent_for_opt = StrategyAgent(self.config)
             strategy_class = strategy_agent_for_opt._load_strategy_class()
-            
             optimizer = OptimizationAgent(self.config, strategy_class)
-            optimization_results = optimizer.execute(featured_data)
-            
+            optimization_results = optimizer.execute(market_data)
             analytics_agent = AnalyticsAgent(self.config)
             analytics_agent.execute(optimization_results, self.config['strategy']['name'], is_optimization=True)
 
         elif run_mode == 'backtest':
-            # --- Backtesting Mode ---
+            feature_agent = FeatureEngineeringAgent(self.config)
+            featured_data = feature_agent.execute(market_data)
             strategy_names = self.config['strategy']['name']
             if not isinstance(strategy_names, list):
                 strategy_names = [strategy_names]
-
             all_results = {}
             for strategy_name in strategy_names:
                 logging.info(f"--- Running backtest for strategy: {strategy_name} ---")
-                
-                # Create a temporary config for this strategy
                 strategy_config = self.config.copy()
                 strategy_config['strategy']['name'] = strategy_name
-
                 strategy_agent = StrategyAgent(strategy_config)
                 signals_df = strategy_agent.execute(featured_data.copy())
-
                 risk_agent = RiskManagementAgent(strategy_config)
                 risk_managed_df = risk_agent.execute(signals_df, self.config['backtesting']['initial_capital'])
-
                 backtester = BacktestingAgent(strategy_config)
-                
-                # The backtester now handles which execution model to use.
-                # For iterative mode, it uses the IterativeExecutionAgent internally.
-                # For vectorized, it uses its own internal logic.
-                # We just need to pass the risk-managed data to it.
                 backtest_results = backtester.execute(risk_managed_df)
-                
                 all_results[strategy_name] = backtest_results
-
             analytics_agent = AnalyticsAgent(self.config)
             analytics_agent.execute(all_results, "comparison")
         
         elif run_mode == 'optimize_and_backtest':
-            # --- Optimize and Backtest Mode ---
             strategy_names = self.config['strategy']['name']
             if not isinstance(strategy_names, list):
                 strategy_names = [strategy_names]
-
             all_results = {}
             for strategy_name in strategy_names:
-                logging.info(f"--- Optimizing and backtesting strategy: {strategy_name} ---")
+                logging.info(f"--- Processing strategy: {strategy_name} ---")
                 
-                # Create a temporary config for this strategy
                 strategy_config = self.config.copy()
                 strategy_config['strategy']['name'] = strategy_name
 
-                # Optimize the strategy
-                strategy_agent_for_opt = StrategyAgent(strategy_config)
-                strategy_class = strategy_agent_for_opt._load_strategy_class()
-                
-                optimizer = OptimizationAgent(strategy_config, strategy_class)
-                optimization_results = optimizer.execute(featured_data.copy())
-                
-                # Update the config with the best parameters
-                best_params = optimization_results.get('best_params', {})
-                strategy_config['risk_management'].update(best_params)
-                logging.info(f"Running final backtest with optimal params: {best_params}")
+                # Skip optimization for the ML-based strategy as it requires a fixed, pre-trained model
+                if strategy_name == 'cnn_lstm_strategy':
+                    logging.info(f"Skipping optimization for '{strategy_name}'. Resetting to default parameters.")
+                    best_params = {}
+                    # IMPORTANT: Reset strategy params to default for the ML model
+                    if 'params' in strategy_config['strategy']:
+                        strategy_config['strategy']['params'] = {}
+                else:
+                    # Optimize the strategy
+                    strategy_agent_for_opt = StrategyAgent(strategy_config)
+                    strategy_class = strategy_agent_for_opt._load_strategy_class()
+                    
+                    optimizer = OptimizationAgent(strategy_config, strategy_class)
+                    optimization_results = optimizer.execute(market_data.copy())
+                    best_params = optimization_results.get('best_params', {})
+                    
+                    # Update config with best params
+                    strategy_params = {k: v for k, v in best_params.items() if k not in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+                    risk_params = {k: v for k, v in best_params.items() if k in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+                    
+                    if 'params' not in strategy_config['strategy']:
+                        strategy_config['strategy']['params'] = {}
+                    strategy_config['strategy']['params'].update(strategy_params)
+                    strategy_config['risk_management'].update(risk_params)
+
+                logging.info(f"Running final backtest for '{strategy_name}' with params: {best_params}")
+
+                # Run feature engineering with the correct (optimized or default) parameters
+                final_feature_agent = FeatureEngineeringAgent(strategy_config)
+                final_featured_data = final_feature_agent.execute(market_data.copy())
 
                 # Run the final backtest
                 strategy_agent = StrategyAgent(strategy_config)
-                signals_df = strategy_agent.execute(featured_data.copy())
-
+                signals_df = strategy_agent.execute(final_featured_data)
                 risk_agent = RiskManagementAgent(strategy_config)
                 risk_managed_df = risk_agent.execute(signals_df, self.config['backtesting']['initial_capital'])
-
                 backtester = BacktestingAgent(strategy_config)
                 backtest_results = backtester.execute(risk_managed_df)
                 
@@ -148,13 +178,10 @@ class CoordinatorAgent:
                 }
 
             analytics_agent = AnalyticsAgent(self.config)
-            # The execute method now returns the best strategy name
             best_strategy_name = analytics_agent.execute(
-                {k: v['backtest_results'] for k, v in all_results.items()},
-                "optimized_comparison"
+                all_results, "optimized_comparison"
             )
 
-            # --- Exporting Step for the Best Strategy ---
             if best_strategy_name and self.config.get('export', {}).get('enabled', False):
                 logging.info(f"--- Exporting best strategy: {best_strategy_name} ---")
                 best_strategy_data = all_results[best_strategy_name]
@@ -165,7 +192,81 @@ class CoordinatorAgent:
                     best_strategy_data['backtest_results']
                 )
             
+        elif run_mode == 'train_optimize_and_backtest':
+            # 1. Train the model first
+            logging.info("--- Starting Training Phase ---")
+            feature_agent = FeatureEngineeringAgent(self.config)
+            featured_data = feature_agent.execute(market_data.copy())
+            modeling_agent = ModelingAgent(self.config)
+            modeling_agent.execute(featured_data)
+            logging.info("--- Finished Training Phase ---")
+
+            # 2. Proceed with optimization and backtesting
+            logging.info("--- Starting Optimization and Backtest Phase ---")
+            strategy_names = self.config['strategy']['name']
+            if not isinstance(strategy_names, list):
+                strategy_names = [strategy_names]
+            all_results = {}
+            for strategy_name in strategy_names:
+                logging.info(f"--- Processing strategy: {strategy_name} ---")
+                
+                strategy_config = self.config.copy()
+                strategy_config['strategy']['name'] = strategy_name
+
+                # Unlike the 'optimize_and_backtest' mode, we don't skip optimization here
+                # because the user might want to optimize risk parameters even for the ML model.
+                strategy_agent_for_opt = StrategyAgent(strategy_config)
+                strategy_class = strategy_agent_for_opt._load_strategy_class()
+                
+                optimizer = OptimizationAgent(strategy_config, strategy_class)
+                optimization_results = optimizer.execute(market_data.copy())
+                best_params = optimization_results.get('best_params', {})
+                
+                # Update config with best params
+                strategy_params = {k: v for k, v in best_params.items() if k not in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+                risk_params = {k: v for k, v in best_params.items() if k in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']}
+                
+                if 'params' not in strategy_config['strategy']:
+                    strategy_config['strategy']['params'] = {}
+                strategy_config['strategy']['params'].update(strategy_params)
+                strategy_config['risk_management'].update(risk_params)
+
+                logging.info(f"Running final backtest for '{strategy_name}' with params: {best_params}")
+
+                # Run feature engineering with the correct (optimized or default) parameters
+                final_feature_agent = FeatureEngineeringAgent(strategy_config)
+                final_featured_data = final_feature_agent.execute(market_data.copy())
+
+                # Run the final backtest
+                strategy_agent = StrategyAgent(strategy_config)
+                signals_df = strategy_agent.execute(final_featured_data)
+                risk_agent = RiskManagementAgent(strategy_config)
+                risk_managed_df = risk_agent.execute(signals_df, self.config['backtesting']['initial_capital'])
+                backtester = BacktestingAgent(strategy_config)
+                backtest_results = backtester.execute(risk_managed_df)
+                
+                all_results[strategy_name] = {
+                    "backtest_results": backtest_results,
+                    "best_params": best_params,
+                    "strategy_config": strategy_config
+                }
+
+            analytics_agent = AnalyticsAgent(self.config)
+            best_strategy_name = analytics_agent.execute(
+                all_results, "optimized_comparison"
+            )
+
+            if best_strategy_name and self.config.get('export', {}).get('enabled', False):
+                logging.info(f"--- Exporting best strategy: {best_strategy_name} ---")
+                best_strategy_data = all_results[best_strategy_name]
+                export_agent = ExportAgent(best_strategy_data['strategy_config'])
+                export_agent.execute(
+                    best_strategy_name,
+                    best_strategy_data['best_params'],
+                    best_strategy_data['backtest_results']
+                )
+
         else:
-            raise ValueError(f"Invalid run_mode: '{run_mode}'. Must be 'backtest', 'optimize', 'train', or 'optimize_and_backtest'.")
+            raise ValueError(f"Invalid run_mode: '{run_mode}'. Must be 'backtest', 'optimize', 'train', 'optimize_and_backtest', or 'train_optimize_and_backtest'.")
 
         logging.info(f"--- Pipeline finished '{run_mode}' mode ---")

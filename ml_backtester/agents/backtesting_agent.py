@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
+import optuna
 from ..agents.iterative_execution_agent import IterativeExecutionAgent
 
 class BacktestingAgent:
@@ -89,12 +90,12 @@ class BacktestingAgent:
             }
         }
 
-    def _iterative_backtest(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def _iterative_backtest(self, data: pd.DataFrame, trial: Optional[optuna.Trial] = None) -> Dict[str, Any]:
        """Performs a flexible, iterative backtest."""
        logging.info("Running in iterative mode.")
        
        iterative_agent = IterativeExecutionAgent(config=self.full_config)
-       trades_df = iterative_agent.execute(data, self.initial_capital)
+       trades_df = iterative_agent.execute(data, self.initial_capital, trial)
 
        if trades_df.empty:
            return {
@@ -133,9 +134,19 @@ class BacktestingAgent:
        daily_returns = equity_curve.pct_change().dropna()
        sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252) if daily_returns.std() > 0 else 0
 
+       # Sortino Ratio
+       downside_returns = daily_returns[daily_returns < 0]
+       downside_std = downside_returns.std()
+       sortino_ratio = (daily_returns.mean() / downside_std) * np.sqrt(252) if downside_std > 0 else 0
+
+       # Calmar Ratio
+       calmar_ratio = (total_return / abs(max_drawdown)) if max_drawdown != 0 else 0
+
        return {
            "total_return": total_return,
            "sharpe_ratio": sharpe_ratio,
+           "sortino_ratio": sortino_ratio,
+           "calmar_ratio": calmar_ratio,
            "max_drawdown": max_drawdown,
            "total_trades": total_trades,
            "win_rate": win_rate,
@@ -143,15 +154,21 @@ class BacktestingAgent:
            "formatted_metrics": {
                "Total Return": f"{total_return:.2%}",
                "Sharpe Ratio": f"{sharpe_ratio:.2f}",
+               "Sortino Ratio": f"{sortino_ratio:.2f}",
+               "Calmar Ratio": f"{calmar_ratio:.2f}",
                "Max Drawdown": f"{max_drawdown:.2%}",
                "Total Trades": total_trades,
                "Win Rate": f"{win_rate:.2%}"
            }
        }
 
-    def execute(self, data: pd.DataFrame) -> Dict[str, Any]:
+    def execute(self, data: pd.DataFrame, trial: Optional[optuna.Trial] = None) -> Dict[str, Any]:
         """
         Executes the backtest based on the configured mode.
+
+        Args:
+            data (pd.DataFrame): The input data with signals.
+            trial (Optional[optuna.Trial]): An Optuna trial object for pruning.
         """
         logging.info(f"BacktestingAgent: Starting backtest in '{self.mode}' mode...")
         
@@ -161,7 +178,7 @@ class BacktestingAgent:
         if self.mode == 'vectorized':
             results = self._vectorized_backtest(data)
         elif self.mode == 'iterative':
-            results = self._iterative_backtest(data)
+            results = self._iterative_backtest(data, trial)
         else:
             raise NotImplementedError(f"Backtesting mode '{self.mode}' is not supported.")
             

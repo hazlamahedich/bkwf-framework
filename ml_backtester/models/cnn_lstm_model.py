@@ -20,15 +20,16 @@ class CNNLSTMModelPyTorch(nn.Module):
     """
     A PyTorch implementation of the CNN-LSTM model.
     """
-    def __init__(self, n_features: int):
+    def __init__(self, n_features: int, hidden_size: int = 50, num_layers: int = 1, dropout: float = 0.2):
         super(CNNLSTMModelPyTorch, self).__init__()
         self.cnn = nn.Sequential(
             nn.Conv1d(in_channels=n_features, out_channels=64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=2)
         )
-        self.lstm = nn.LSTM(input_size=64, hidden_size=50, batch_first=True)
-        self.fc = nn.Linear(50, 1)
+        self.lstm = nn.LSTM(input_size=64, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+        self.fc = nn.Linear(hidden_size, 1)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # x shape: [batch_size, seq_len, n_features]
@@ -40,7 +41,8 @@ class CNNLSTMModelPyTorch(nn.Module):
         
         _, (h_n, _) = self.lstm(x)
         
-        # Get the last hidden state
-        x = h_n.squeeze(0)
+        # Get the last hidden state of the last layer
+        x = h_n[-1, :, :]
+        x = self.dropout(x)
         x = self.fc(x)
         return x

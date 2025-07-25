@@ -21,16 +21,19 @@ class DataAgent:
         self.config = config
         self.data_path = Path(self.config['data_path'])
 
-    def execute(self) -> pd.DataFrame:
+    def execute(self) -> tuple[pd.DataFrame, str, str]:
         """
-        Executes the data loading process.
+        Executes the data loading process and extracts symbol and timeframe.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the loaded OHLCV data,
-                          with a datetime index.
+            tuple[pd.DataFrame, str, str]: A tuple containing:
+                - pd.DataFrame: The loaded OHLCV data.
+                - str: The symbol (e.g., 'EURUSD').
+                - str: The timeframe (e.g., 'm15').
         
         Raises:
-            FileNotFoundError: If the data file specified in the config does not exist.
+            FileNotFoundError: If the data file does not exist.
+            ValueError: If the filename format is incorrect or data is invalid.
         """
         logging.info(f"DataAgent: Loading data from '{self.data_path}'...")
 
@@ -39,16 +42,36 @@ class DataAgent:
             raise FileNotFoundError(f"Data file not found at: {self.data_path}")
 
         try:
+            # Extract symbol and timeframe from filename
+            # Expected format: SYMBOL_TIMEFRAME_... .parquet
+            parts = self.data_path.stem.split('_')
+            if len(parts) < 2:
+                raise ValueError(f"Invalid filename format: '{self.data_path.name}'. Expected 'SYMBOL_TIMEFRAME_...'.")
+            symbol = parts[0]
+            timeframe = parts[1]
+            logging.info(f"DataAgent: Extracted Symbol='{symbol}', Timeframe='{timeframe}'")
+
             data = pd.read_parquet(self.data_path)
             logging.info(f"DataAgent: Successfully loaded {len(data)} data points.")
-            # Basic validation: ensure essential columns are present
+            
             required_columns = {'open', 'high', 'low', 'close'}
             if not required_columns.issubset(data.columns):
-                raise ValueError(f"Data loaded from {self.data_path} is missing one of the required columns: {required_columns}")
+                raise ValueError(f"Data loaded from {self.data_path} is missing required columns: {required_columns}")
             
-            return data
+            # Standardize volume column
+            volume_cols = ['vol', 'volume', 'tick_volume']
+            for col in volume_cols:
+                if col in data.columns:
+                    data.rename(columns={col: 'volume'}, inplace=True)
+                    logging.info(f"DataAgent: Standardized volume column from '{col}' to 'volume'.")
+                    break
+            
+            if 'volume' not in data.columns:
+                logging.warning("DataAgent: Volume column not found. Some indicators may not be available.")
+
+            return data, symbol, timeframe
         except Exception as e:
-            logging.error(f"DataAgent: Failed to load or validate data from {self.data_path}. Error: {e}")
+            logging.error(f"DataAgent: Failed to process data from {self.data_path}. Error: {e}")
             raise
 
 if __name__ == '__main__':

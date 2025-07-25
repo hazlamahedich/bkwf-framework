@@ -1,6 +1,6 @@
 # --- Master Configuration for the Backtesting Framework ---
 
-run_mode: 'optimize_and_backtest' # 'train', 'optimize', or 'backtest'
+run_mode: 'train_optimize_and_backtest' # 'train', 'optimize', 'backtest', or 'train_optimize_and_backtest'
 
 
 # 1. Data Agent Configuration
@@ -14,33 +14,65 @@ feature_engineering:
     - {name: 'rsi'}
     - {name: 'stoch'}
     - {name: 'atr'}
+    - {name: 'bband'}
+    - {name: 'obv'}
+    - {name: 'cci'}
+    - {name: 'adx'}
+    - {name: 'wpr'}
+    - {name: 'ichimoku'}
+    - {name: 'mfi'}
+    - {name: 'cmf'}
+    - {name: 'kc'}
+    - {name: 'psar'}
+    - {name: 'stochrsi'}
   scaling: null # 'standard' or null
 
 # 3. Strategy Configuration
 strategy:
   name:
+    - 'cnn_lstm'
     - 'triple_threat'
     - 'bounce_back'
-    - 'cnn_lstm_strategy'
   # Strategy-specific parameters would go here if needed
   # params:
   #   ema_period: 200
 
 # 4. Modeling Configuration
 modeling:
+  model_type: 'cnn_lstm'
   model_save_path: 'ml_backtester/models/trained_model_pytorch'
-  look_back: 60
-  epochs: 5 # Lower for a quick initial run
+  use_enhanced_model: true
+  look_back: 96
+  epochs: 100
   batch_size: 32
 
 # 5. Optimization Configuration
 optimization:
-  enabled: false # Set to true to run optimization
+  enabled: true # Set to true to run optimization
   n_trials: 50
-  params:
-    # Define parameter search space for the selected strategy
-    sl_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
-    tp_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+  objective_metric: 'sharpe_ratio' # sharpe_ratio, sortino_ratio, calmar_ratio
+  params_by_strategy:
+    cnn_lstm:
+      sl_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+      tp_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+      trailing_stop_atr_multiplier: {type: 'float', low: 1.0, high: 4.0}
+    triple_threat:
+      ema_period: {type: 'int', low: 150, high: 250}
+      stoch_oversold: {type: 'int', low: 10, high: 30}
+      stoch_overbought: {type: 'int', low: 70, high: 90}
+      sl_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+      tp_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+    bounce_back:
+      fib_window: {type: 'int', low: 200, high: 300}
+      rsi_period: {type: 'int', low: 10, high: 20}
+      sl_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+      tp_atr_multiplier: {type: 'float', low: 1.0, high: 5.0}
+  
+  ml_params: # New section for ML hyperparameter tuning
+    learning_rate: {type: 'float', low: 0.0001, high: 0.01, log: true}
+    num_layers: {type: 'int', low: 1, high: 3}
+    hidden_size: {type: 'int', low: 32, high: 128}
+    dropout: {type: 'float', low: 0.1, high: 0.5}
 
 # 6. Risk Management Configuration
 risk_management:
@@ -60,7 +92,11 @@ backtesting:
   mode: 'iterative'
   initial_capital: 100000
 
-# 9. Analytics Configuration
+# 9. Walk-Forward Configuration
+walk_forward:
+  n_splits: 5 # Number of folds for walk-forward validation
+
+# 10. Analytics Configuration
 analytics:
   report_path: 'ml_backtester/reports'
 

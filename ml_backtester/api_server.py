@@ -8,19 +8,19 @@ import torch
 import joblib
 import logging
 
-from ml_backtester.models.cnn_lstm_model import CNNLSTMModelPyTorch
+from ml_backtester.models.enhanced_cnn_lstm_model import EnhancedCNNLSTMModel
 
 app = Flask(__name__)
 
 # --- Configuration ---
 MODEL_PATH = Path('ml_backtester/models/trained_model_pytorch')
-LOOK_BACK = 60 # This should match the model's training configuration
+LOOK_BACK = 96 # This should match the model's training configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # --- Load Model and Scaler ---
 try:
     n_features = len(joblib.load(MODEL_PATH / 'scaler.gz').mean_)
-    model = CNNLSTMModelPyTorch(n_features=n_features).to(DEVICE)
+    model = EnhancedCNNLSTMModel(n_features=n_features).to(DEVICE)
     model.load_state_dict(torch.load(MODEL_PATH / 'model.pth'))
     scaler = joblib.load(MODEL_PATH / 'scaler.gz')
     model.eval()
@@ -66,4 +66,4 @@ def predict():
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    app.run(host='0.0.0.0', port=5001, debug=False)
+    app.run(host='0.0.0.0', port=5002, debug=False)

@@ -20,3 +20,4 @@ seaborn
 matplotlib
 # Technical Analysis
 pandas-ta
+lightgbm

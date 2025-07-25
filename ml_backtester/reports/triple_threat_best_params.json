@@ -1,4 +1,10 @@
 {
-    "sl_atr_multiplier": 4.671434302723211,
-    "tp_atr_multiplier": 2.305285884315731
+    "ema_period": 215,
+    "stoch_oversold": 15,
+    "stoch_overbought": 85,
+    "fib_window": 203,
+    "rsi_period": 20,
+    "sl_atr_multiplier": 1.3934089653752406,
+    "tp_atr_multiplier": 3.843882256195208,
+    "trailing_stop_atr_multiplier": 2.6663331990234265
 }

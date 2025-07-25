@@ -16,28 +16,22 @@ class StrategyAgent:
     def __init__(self, config: Dict[str, Any]):
         """
         Initializes the StrategyAgent.
-
         Args:
-            config (Dict[str, Any]): Configuration dictionary. Expected keys:
-                'strategy': {
-                    'name': 'name_of_strategy_file',
-                    ... other strategy-specific params ...
-                }
+            config (Dict[str, Any]): The full configuration dictionary.
         """
-        self.config = config.get('strategy', {})
-        self.strategy_name = self.config.get('name')
+        self.config = config
+        self.strategy_config = self.config.get('strategy', {})
+        self.strategy_name = self.strategy_config.get('name')
         if not self.strategy_name:
             raise ValueError("Strategy 'name' must be specified in the config.")
 
     def _load_strategy_class(self) -> BaseStrategy:
         """Dynamically imports and returns the strategy class."""
+        module_path = f"ml_backtester.strategies.{self.strategy_name}"
+        class_name = "".join(word.capitalize() for word in self.strategy_name.split('_')) + "Strategy"
+        
         try:
-            module_path = f"ml_backtester.strategies.{self.strategy_name}"
             strategy_module = importlib.import_module(module_path)
-            
-            # Convention: Class name is CamelCase version of snake_case file name
-            class_name = "".join(word.capitalize() for word in self.strategy_name.split('_')) + "Strategy"
-            
             strategy_class = getattr(strategy_module, class_name)
             return strategy_class
         except (ImportError, AttributeError) as e:
@@ -57,6 +51,7 @@ class StrategyAgent:
         logging.info(f"StrategyAgent: Loading and executing strategy '{self.strategy_name}'...")
         
         strategy_class = self._load_strategy_class()
+        # Pass the entire, potentially updated, config to the strategy
         strategy_instance = strategy_class(config=self.config)
         
         signals_df = strategy_instance.generate_signals(data)

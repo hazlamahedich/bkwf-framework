@@ -14,9 +14,9 @@ class BounceBackStrategy(BaseStrategy):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        # Parameters for Fibonacci, RSI, and divergence can be passed in config
-        self.fib_window = self.config.get('fib_window', 252) # Lookback for high/low
-        self.rsi_period = self.config.get('rsi_period', 14)
+        strategy_params = config.get('strategy', {}).get('params', {})
+        self.fib_window = strategy_params.get('fib_window', 252)
+        self.rsi_period = strategy_params.get('rsi_period', 14)
 
     def _detect_engulfing(self, data: pd.DataFrame) -> pd.Series:
         """Detects bullish and bearish engulfing patterns."""

@@ -16,45 +16,49 @@ class TripleThreatStrategy(BaseStrategy):
     def __init__(self, config: Dict[str, Any]):
         """
         Initializes the TripleThreatStrategy.
-
         Args:
-            config (Dict[str, Any]): Configuration dictionary. The strategy
-                                     logic itself is parameter-less in this
-                                     implementation, but it adheres to the
-                                     BaseStrategy interface.
+            config (Dict[str, Any]): Configuration dictionary.
         """
         super().__init__(config)
+        strategy_params = config.get('strategy', {}).get('params', {})
+        self.ema_period = strategy_params.get('ema_period', 200)
+        self.macd_fast = strategy_params.get('macd_fast', 12)
+        self.macd_slow = strategy_params.get('macd_slow', 26)
+        self.macd_signal = strategy_params.get('macd_signal', 9)
+        self.stoch_k = strategy_params.get('stoch_k', 14)
+        self.stoch_d = strategy_params.get('stoch_d', 3)
+        self.stoch_smooth_k = strategy_params.get('stoch_smooth_k', 3)
+        self.stoch_oversold = strategy_params.get('stoch_oversold', 20)
+        self.stoch_overbought = strategy_params.get('stoch_overbought', 80)
 
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Generates buy/sell signals based on the Triple Threat logic.
-
         Args:
-            data (pd.DataFrame): A DataFrame containing OHLCV data and the
-                                 necessary indicators (EMA_200, MACD, STOCH).
-
+            data (pd.DataFrame): DataFrame with OHLCV and indicator data.
         Returns:
-            pd.DataFrame: The input DataFrame with a 'signal' column appended.
+            pd.DataFrame: The input DataFrame with a 'signal' column.
         """
-        # Ensure required columns are present
-        required_cols = ['EMA_200', 'MACD_12_26_9', 'MACDs_12_26_9', 'STOCHk_14_3_3']
+        # Define dynamic column names based on parameters
+        ema_col = f'EMA_{self.ema_period}'
+        macd_col = f'MACD_{self.macd_fast}_{self.macd_slow}_{self.macd_signal}'
+        macds_col = f'MACDs_{self.macd_fast}_{self.macd_slow}_{self.macd_signal}'
+        stoch_col = f'STOCHk_{self.stoch_k}_{self.stoch_d}_{self.stoch_smooth_k}'
+
+        required_cols = [ema_col, macd_col, macds_col, stoch_col]
         if not all(col in data.columns for col in required_cols):
             raise ValueError(f"Input data is missing one of the required indicator columns: {required_cols}")
 
-        # Initialize signal column
         signals = np.zeros(len(data))
 
         # --- Define Conditions using Vectorized Operations ---
-        
-        # Long conditions
-        long_trend = data['close'] > data['EMA_200']
-        long_momentum = data['MACD_12_26_9'] > data['MACDs_12_26_9']
-        long_entry = (data['STOCHk_14_3_3'] > data['STOCHk_14_3_3'].shift(1)) & (data['STOCHk_14_3_3'].shift(1) < 20)
+        long_trend = data['close'] > data[ema_col]
+        long_momentum = data[macd_col] > data[macds_col]
+        long_entry = (data[stoch_col] > data[stoch_col].shift(1)) & (data[stoch_col].shift(1) < self.stoch_oversold)
 
-        # Short conditions
-        short_trend = data['close'] < data['EMA_200']
-        short_momentum = data['MACD_12_26_9'] < data['MACDs_12_26_9']
-        short_entry = (data['STOCHk_14_3_3'] < data['STOCHk_14_3_3'].shift(1)) & (data['STOCHk_14_3_3'].shift(1) > 80)
+        short_trend = data['close'] < data[ema_col]
+        short_momentum = data[macd_col] < data[macds_col]
+        short_entry = (data[stoch_col] < data[stoch_col].shift(1)) & (data[stoch_col].shift(1) > self.stoch_overbought)
 
         # --- Apply Conditions to Generate Signals ---
         

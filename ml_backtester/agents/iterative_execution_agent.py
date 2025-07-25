@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
+import optuna
 
 class IterativeExecutionAgent:
     """
@@ -22,9 +23,14 @@ class IterativeExecutionAgent:
         self.tsl_enabled = self.tsl_config.get('enabled', False)
         self.tsl_atr_multiplier = self.tsl_config.get('atr_multiplier', 1.5)
 
-    def execute(self, data: pd.DataFrame, initial_capital: float) -> pd.DataFrame:
+    def execute(self, data: pd.DataFrame, initial_capital: float, trial: Optional[optuna.Trial] = None) -> pd.DataFrame:
         """
         Simulates trade execution iteratively.
+
+        Args:
+            data (pd.DataFrame): The input data with signals.
+            initial_capital (float): The starting capital.
+            trial (Optional[optuna.Trial]): An Optuna trial object for pruning.
         """
         logging.info("IterativeExecutionAgent: Simulating trade execution...")
 
@@ -53,7 +59,7 @@ class IterativeExecutionAgent:
         trades = []
 
         # --- Main Loop ---
-        for i, row in data.iterrows():
+        for i, (idx, row) in enumerate(data.iterrows()):
             # --- Check for Exits ---
             if in_trade:
                 # Check SL/TP
@@ -72,7 +78,7 @@ class IterativeExecutionAgent:
                     pnl = (exit_price - entry_price) * position
                     capital += pnl
                     trades.append({
-                        'entry_time': entry_time, 'exit_time': row.name,
+                        'entry_time': entry_time, 'exit_time': idx,
                         'entry_price': entry_price, 'exit_price': exit_price,
                         'position_size': position, 'pnl': pnl, 'exit_reason': exit_reason
                     })
@@ -93,7 +99,7 @@ class IterativeExecutionAgent:
             # --- Check for Entries ---
             if not in_trade and row['signal'] != 0:
                 in_trade = True
-                entry_time = row.name
+                entry_time = idx
                 position = row['position_size'] if row['signal'] == 1 else -row['position_size']
                 entry_price = row['entry_price']
                 stop_loss = row['stop_loss']
@@ -103,6 +109,21 @@ class IterativeExecutionAgent:
                     peak_price = entry_price
                 else:
                     peak_price = entry_price
+            
+            # --- Pruning Logic ---
+            if trial and i > 0 and i % 1000 == 0: # Report every 1000 bars
+                if trades:
+                    temp_trades = pd.DataFrame(trades)
+                    temp_trades['pnl_cumulative'] = temp_trades['pnl'].cumsum()
+                    temp_trades['equity'] = initial_capital + temp_trades['pnl_cumulative']
+                    daily_returns = temp_trades['equity'].pct_change().dropna()
+                    
+                    if daily_returns.std() > 0:
+                        sharpe = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
+                        trial.report(sharpe, i)
+
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
 
         logging.info(f"Iterative execution finished. Total trades: {len(trades)}")
         return pd.DataFrame(trades)

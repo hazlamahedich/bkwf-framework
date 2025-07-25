@@ -1,0 +1,1 @@
+// Strategy 'cnn_lstm' is not supported for MT5 export yet.

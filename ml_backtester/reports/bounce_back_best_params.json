@@ -1,0 +1,10 @@
+{
+    "ema_period": 205,
+    "stoch_oversold": 22,
+    "stoch_overbought": 83,
+    "fib_window": 260,
+    "rsi_period": 18,
+    "sl_atr_multiplier": 1.0462257508959132,
+    "tp_atr_multiplier": 1.5310704459313307,
+    "trailing_stop_atr_multiplier": 2.0491948179139494
+}

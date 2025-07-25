@@ -8,6 +8,9 @@ import joblib
 from .risk_management_agent import RiskManagementAgent
 from .execution_agent import ExecutionAgent
 from .backtesting_agent import BacktestingAgent
+from .feature_engineering_agent import FeatureEngineeringAgent
+from .modeling_agent import ModelingAgent
+from pathlib import Path
 
 class OptimizationAgent:
     """
@@ -17,54 +20,94 @@ class OptimizationAgent:
     def __init__(self, config: Dict[str, Any], strategy_class: Callable):
         """
         Initializes the OptimizationAgent.
-
         Args:
-            config (Dict[str, Any]): Configuration dictionary. Expected keys:
-                'optimization': {
-                    'n_trials': 100,
-                    'metric': 'sharpe_ratio',
-                    'params': {
-                        'ema_period': {'type': 'int', 'low': 50, 'high': 250},
-                        ...
-                    }
-                }
+            config (Dict[str, Any]): The main configuration dictionary.
             strategy_class (Callable): The strategy class to be optimized.
         """
-        self.config = config.get('optimization', {})
+        self.config = config
         self.strategy_class = strategy_class
-        self.param_space = self.config.get('params', {})
-        self.n_trials = self.config.get('n_trials', 50)
+        self.opt_config = self.config.get('optimization', {})
+        self.n_trials = self.opt_config.get('n_trials', 50)
+
+        # Convert strategy class name to snake_case to match config keys
+        strategy_name_snake = ''.join(['_' + i.lower() if i.isupper() else i for i in strategy_class.__name__]).lstrip('_').replace('_strategy', '')
+
+        # Get the correct parameter space for the given strategy
+        params_by_strategy = self.opt_config.get('params_by_strategy', {})
+        self.param_space = params_by_strategy.get(strategy_name_snake, {})
+
+        if not self.param_space:
+            logging.warning(f"No optimization parameters found for strategy: {strategy_name_snake}")
 
     def _create_objective(self, data: pd.DataFrame) -> Callable:
         """Creates the objective function for Optuna to optimize."""
         
         def objective(trial: optuna.Trial) -> float:
-            trial_params = {}
+            strategy_params = {}
+            risk_params = {}
+
             for name, space in self.param_space.items():
+                value = None
                 if space['type'] == 'int':
-                    trial_params[name] = trial.suggest_int(name, space['low'], space['high'])
+                    value = trial.suggest_int(name, space['low'], space['high'])
                 elif space['type'] == 'float':
-                    trial_params[name] = trial.suggest_float(name, space['low'], space['high'])
+                    value = trial.suggest_float(name, space['low'], space['high'], log=space.get('log', False))
 
-            # Create a temporary config for this trial
-            trial_config = self.config.copy()
-            trial_config['risk_management'] = trial_params
-
-            # Run the core backtesting pipeline for this trial
-            strategy = self.strategy_class(config=trial_config)
-            signals_df = strategy.generate_signals(data.copy())
+                if name in ['sl_atr_multiplier', 'tp_atr_multiplier', 'trailing_stop_atr_multiplier']:
+                    risk_params[name] = value
+                else:
+                    strategy_params[name] = value
             
+            # Suggest ML hyperparameters
+            ml_params = {}
+            ml_param_space = self.opt_config.get('ml_params', {})
+            for name, space in ml_param_space.items():
+                if space['type'] == 'int':
+                    ml_params[name] = trial.suggest_int(name, space['low'], space['high'])
+                elif space['type'] == 'float':
+                    ml_params[name] = trial.suggest_float(name, space['low'], space['high'], log=space.get('log', False))
+
+            # Create a unique model path for this trial to avoid race conditions
+            trial_model_path = Path(self.config['modeling']['model_save_path']) / f"trial_{trial.number}"
+            trial_model_path.mkdir(parents=True, exist_ok=True)
+
+            trial_config = self.config.copy()
+            trial_config['strategy']['params'] = strategy_params
+            trial_config['risk_management'].update(risk_params)
+            trial_config['modeling']['model_save_path'] = str(trial_model_path)
+            trial_config['modeling'].update(ml_params)
+            
+            # 1. Feature Engineering for this trial
+            feature_agent = FeatureEngineeringAgent(trial_config)
+            featured_data = feature_agent.execute(data.copy())
+
+            # 2. Train Model for this trial
+            # Note: This assumes the strategy being optimized is an ML strategy.
+            # A check might be needed for non-ML strategies.
+            if self.strategy_class.__name__ == 'CnnLstmStrategy':
+                logging.info(f"Trial {trial.number}: Training ML model with params: {ml_params}")
+                model_agent = ModelingAgent(trial_config)
+                # Pass ML hyperparameters to the training method
+                model_agent.execute(featured_data.copy(), ml_params)
+
+            # 3. Generate Signals
+            strategy = self.strategy_class(config=trial_config)
+            signals_df = strategy.generate_signals(featured_data)
+
+            # 4. Manage Risk
             risk_agent = RiskManagementAgent(trial_config)
-            risk_managed_df = risk_agent.execute(signals_df, self.config.get('backtesting', {}).get('initial_capital', 100000))
+            risk_managed_df = risk_agent.execute(signals_df, trial_config.get('backtesting', {}).get('initial_capital', 100000))
 
             execution_agent = ExecutionAgent(trial_config)
             executed_df = execution_agent.execute(risk_managed_df)
 
             backtester = BacktestingAgent(trial_config)
-            results = backtester.execute(executed_df)
+            # Pass the trial to the backtester for pruning
+            results = backtester.execute(executed_df, trial)
             
-            # Return the Sharpe ratio, or a very low number if it's not available
-            return results.get('sharpe_ratio', -np.inf)
+            # Return the specified objective metric, or a very low number if not available
+            objective_metric = self.opt_config.get('objective_metric', 'sharpe_ratio')
+            return results.get(objective_metric, -np.inf)
 
         return objective
 
@@ -82,9 +125,14 @@ class OptimizationAgent:
         
         objective_func = self._create_objective(data)
         
-        # Create an Optuna study
-        study = optuna.create_study(direction='maximize')
+        # Create an Optuna study with a pruner
+        pruner = optuna.pruners.MedianPruner()
+        study = optuna.create_study(direction='maximize', pruner=pruner)
         
+        # Ensure iterative mode is used for optimization to support pruning
+        self.config['backtesting']['mode'] = 'iterative'
+        logging.info("Set backtesting mode to 'iterative' for optimization.")
+
         # Run the study with parallel jobs
         study.optimize(
             objective_func,

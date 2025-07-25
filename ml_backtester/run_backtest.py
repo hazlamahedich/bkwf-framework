@@ -16,10 +16,16 @@ def main():
         default='ml_backtester/configs/config.yaml',
         help='Path to the configuration YAML file.'
     )
+    parser.add_argument(
+        '--params_file',
+        type=str,
+        default=None,
+        help='Optional path to a JSON file with optimal parameters to override the config.'
+    )
     args = parser.parse_args()
 
     # Initialize and run the coordinator
-    coordinator = CoordinatorAgent(config_path=args.config)
+    coordinator = CoordinatorAgent(config_path=args.config, params_file=args.params_file)
     coordinator.run()
 
 if __name__ == '__main__':
