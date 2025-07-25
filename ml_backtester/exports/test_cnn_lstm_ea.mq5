@@ -189,42 +189,19 @@ string BuildJsonPayload()
 
    // Copy data for the entire look_back period
    int data_to_copy = InpLookBack + 1;
-   bool data_copied = false;
    
-   for(int attempt = 0; attempt < 5; attempt++)
+   // Patiently check if data is ready. If not, abort and wait for the next tick.
+   if(CopyBuffer(ema_handle, 0, 0, data_to_copy, ema) < data_to_copy ||
+      CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy ||
+      CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
+      CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
+      CopyBuffer(rsi_handle, 0, 0, data_to_copy, rsi) < data_to_copy ||
+      CopyBuffer(stoch_handle, 0, 0, data_to_copy, stoch_k) < data_to_copy ||
+      CopyBuffer(stoch_handle, 1, 0, data_to_copy, stoch_d) < data_to_copy ||
+      CopyBuffer(atr_handle, 0, 0, data_to_copy, atr_val) < data_to_copy ||
+      CopyRates(_Symbol, _Period, 0, data_to_copy, rates) < data_to_copy)
      {
-      ResetLastError();
-      // First, try to copy just the main MACD line to force calculation
-      if(CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy) {
-          printf("Attempt %d: Failed to pre-copy MACD Main line. Error: %d. Retrying...", attempt + 1, GetLastError());
-          Sleep(100);
-          continue;
-      }
-
-      // Now, attempt to copy all buffers
-      if(CopyBuffer(ema_handle, 0, 0, data_to_copy, ema) < data_to_copy ||
-         CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
-         CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
-         CopyBuffer(rsi_handle, 0, 0, data_to_copy, rsi) < data_to_copy ||
-         CopyBuffer(stoch_handle, 0, 0, data_to_copy, stoch_k) < data_to_copy ||
-         CopyBuffer(stoch_handle, 1, 0, data_to_copy, stoch_d) < data_to_copy ||
-         CopyBuffer(atr_handle, 0, 0, data_to_copy, atr_val) < data_to_copy ||
-         CopyRates(_Symbol, _Period, 0, data_to_copy, rates) < data_to_copy)
-        {
-         printf("Attempt %d: Failed to copy subsequent indicator data. Error: %d. Retrying in 100ms...", attempt + 1, GetLastError());
-         Sleep(100); // Wait 100 milliseconds before retrying
-        }
-      else
-        {
-         data_copied = true;
-         printf("Successfully copied all indicator and rates data on attempt %d.", attempt + 1);
-         break;
-        }
-     }
-
-   if(!data_copied)
-     {
-      printf("Failed to copy indicator data after 5 attempts. Aborting.");
+      Comment("Indicator data not yet ready. Waiting for next tick.");
       return "";
      }
 
