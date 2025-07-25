@@ -4,6 +4,8 @@ import numpy as np
 from typing import Dict, Any, Callable
 import logging
 import joblib
+import signal
+import sys
 
 from .risk_management_agent import RiskManagementAgent
 from .execution_agent import ExecutionAgent
@@ -133,12 +135,29 @@ class OptimizationAgent:
         self.config['backtesting']['mode'] = 'iterative'
         logging.info("Set backtesting mode to 'iterative' for optimization.")
 
-        # Run the study with parallel jobs
-        study.optimize(
-            objective_func,
-            n_trials=self.n_trials,
-            n_jobs=-1  # Use all available CPU cores
-        )
+        # --- Graceful Shutdown ---
+        def signal_handler(sig, frame):
+            logging.warning("Shutdown signal received. Asking Optuna to stop...")
+            study.stop()
+            # Give some time for the running trials to finish
+            logging.info("Waiting for running trials to complete...")
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        try:
+            # Run the study with parallel jobs
+            study.optimize(
+                objective_func,
+                n_trials=self.n_trials,
+                n_jobs=-1  # Use all available CPU cores
+            )
+        except KeyboardInterrupt:
+            logging.warning("Optimization stopped by user (KeyboardInterrupt).")
+        finally:
+            logging.info("Restoring default signal handlers.")
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
         logging.info(f"Optimization complete. Best trial score: {study.best_value:.4f}")
         logging.info(f"Best parameters found: {study.best_params}")

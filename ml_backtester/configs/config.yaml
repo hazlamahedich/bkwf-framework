@@ -45,6 +45,10 @@ modeling:
   look_back: 96
   epochs: 100
   batch_size: 32
+  resume_training: true
+  use_torch_compile: false
+  use_mixed_precision: true
+  num_workers: 4
 
 # 5. Optimization Configuration
 optimization:

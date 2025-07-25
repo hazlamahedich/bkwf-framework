@@ -33,7 +33,12 @@ class ModelingAgent:
         self.epochs = self.config.get('epochs', 50)
         self.batch_size = self.config.get('batch_size', 32)
         self.early_stopping_patience = self.config.get('early_stopping_patience', 10)
+        self.resume_training = self.config.get('resume_training', False)
+        self.use_torch_compile = self.config.get('use_torch_compile', False)
+        self.use_mixed_precision = self.config.get('use_mixed_precision', False)
+        self.num_workers = self.config.get('num_workers', 0)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.is_cuda = self.device.type == 'cuda'
         logging.info(f"Using device: {self.device}")
 
     def _prepare_data(self, data: pd.DataFrame) -> Tuple[DataLoader, DataLoader]:
@@ -96,8 +101,8 @@ class ModelingAgent:
         train_dataset = TensorDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float())
         test_dataset = TensorDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float())
 
-        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=self.is_cuda)
+        test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.is_cuda)
 
         return train_loader, test_loader, X_train.shape[2]
 
@@ -138,6 +143,22 @@ class ModelingAgent:
             n_features (int): Number of input features.
             hyperparameters (Dict[str, Any]): Dictionary of hyperparameters for the model.
         """
+        checkpoint_path = self.model_path / 'model.pth'
+        
+        # Try to load from checkpoint if resuming
+        if self.resume_training and checkpoint_path.exists():
+            try:
+                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                # Load params from checkpoint to ensure model architecture matches
+                hyperparameters = checkpoint['hyperparameters']
+                n_features = checkpoint['n_features']
+                logging.info(f"Resuming with hyperparameters from checkpoint: {hyperparameters}")
+            except Exception as e:
+                logging.warning(f"Could not load hyperparameters from checkpoint, using current config. Error: {e}")
+                checkpoint = None # Reset checkpoint if it's corrupted or old format
+        else:
+            checkpoint = None
+
         model = CNNLSTMModelPyTorch(
             n_features=n_features,
             hidden_size=hyperparameters.get('hidden_size', 64),
@@ -145,35 +166,63 @@ class ModelingAgent:
             dropout=hyperparameters.get('dropout', 0.2)
         ).to(self.device)
         
+        if self.use_torch_compile:
+            try:
+                model = torch.compile(model)
+                logging.info("Model compiled successfully with torch.compile().")
+            except Exception as e:
+                logging.warning(f"torch.compile() failed with error: {e}. Proceeding without compilation.")
+
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(model.parameters(), lr=hyperparameters.get('learning_rate', 0.001))
 
-        logging.info(f"Starting PyTorch model training with params: {hyperparameters}")
-        
+        start_epoch = 0
         best_val_loss = float('inf')
         patience_counter = 0
+
+        if checkpoint:
+            try:
+                model.load_state_dict(checkpoint['model_state_dict'])
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                start_epoch = checkpoint.get('epoch', 0) + 1
+                best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+                logging.info(f"Successfully loaded model and optimizer state from checkpoint. Resuming from epoch {start_epoch}.")
+            except Exception as e:
+                logging.error(f"Error loading state dicts from checkpoint: {e}. Starting from scratch.")
+                start_epoch = 0
+                best_val_loss = float('inf')
+
+
+        logging.info(f"Starting PyTorch model training with params: {hyperparameters}")
         
-        for epoch in range(self.epochs):
+        scaler = torch.cuda.amp.GradScaler(enabled=self.is_cuda and self.use_mixed_precision)
+
+        for epoch in range(start_epoch, self.epochs):
             model.train()
             for X_batch, y_batch in train_loader:
                 X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
                 
                 optimizer.zero_grad()
-                outputs = model(X_batch)
-                loss = criterion(outputs.squeeze(), y_batch)
-                loss.backward()
-                optimizer.step()
+                
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.is_cuda and self.use_mixed_precision):
+                    outputs = model(X_batch)
+                    loss = criterion(outputs.squeeze(), y_batch)
+                
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             
             model.eval()
             val_loss, correct, total = 0, 0, 0
             with torch.no_grad():
-                for X_batch, y_batch in test_loader:
-                    X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
-                    outputs = model(X_batch)
-                    val_loss += criterion(outputs.squeeze(), y_batch).item()
-                    predicted = torch.round(torch.sigmoid(outputs.squeeze()))
-                    total += y_batch.size(0)
-                    correct += (predicted == y_batch).sum().item()
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.is_cuda and self.use_mixed_precision):
+                    for X_batch, y_batch in test_loader:
+                        X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
+                        outputs = model(X_batch)
+                        val_loss += criterion(outputs.squeeze(), y_batch).item()
+                        predicted = torch.round(torch.sigmoid(outputs.squeeze()))
+                        total += y_batch.size(0)
+                        correct += (predicted == y_batch).sum().item()
             
             avg_val_loss = val_loss / len(test_loader)
             accuracy = 100 * correct / total
@@ -181,8 +230,18 @@ class ModelingAgent:
 
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
-                torch.save(model.state_dict(), self.model_path / 'model.pth')
-                logging.info(f"Validation loss improved. Model saved to '{self.model_path}'.")
+                
+                # Save a comprehensive checkpoint
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'best_val_loss': best_val_loss,
+                    'n_features': n_features,
+                    'hyperparameters': hyperparameters
+                }
+                torch.save(checkpoint, self.model_path / 'model.pth')
+                logging.info(f"Validation loss improved. Checkpoint saved to '{self.model_path}'.")
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -191,7 +250,8 @@ class ModelingAgent:
                     break
 
         # Load the best model state before finishing
-        model.load_state_dict(torch.load(self.model_path / 'model.pth'))
+        final_checkpoint = torch.load(self.model_path / 'model.pth')
+        model.load_state_dict(final_checkpoint['model_state_dict'])
         logging.info(f"Finished training. Best model loaded from '{self.model_path}'.")
 
     def _train_cnn_lightgbm(self, train_loader, test_loader, n_features, hyperparameters: Dict[str, Any]):

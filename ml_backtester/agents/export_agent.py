@@ -525,16 +525,16 @@ plot(fib_618, "Fib 61.8", color=color.new(color.purple, 50))
 
         # Feature configurations from the project
         ema_len = 200
-        macd_fast = 12
-        macd_slow = 26
-        macd_signal = 9
+        # macd_fast = 12
+        # macd_slow = 26
+        # macd_signal = 9
         rsi_len = 14
         stoch_k = 14
         stoch_d = 3
         stoch_slowing = 3
         atr_len = 14
-        macd_total_period = macd_slow + macd_signal
-        max_indicator_period = max(ema_len, macd_total_period, rsi_len, stoch_k, atr_len)
+        # macd_total_period = macd_slow + macd_signal
+        max_indicator_period = max(ema_len, rsi_len, stoch_k, atr_len)
 
 
         return f"""
@@ -559,9 +559,9 @@ input int    InpLookBack     = {look_back};      // Model Look-back period
 
 //--- Indicator Parameters (must match training)
 input int    InpMAPeriod     = {ema_len};
-input int    InpMACDFast     = {macd_fast};
-input int    InpMACDSlow     = {macd_slow};
-input int    InpMACDSignal   = {macd_signal};
+// input int    InpMACDFast     = 12;
+// input int    InpMACDSlow     = 26;
+// input int    InpMACDSignal   = 9;
 input int    InpRSIPeriod    = {rsi_len};
 input int    InpStochK       = {stoch_k};
 input int    InpStochD       = {stoch_d};
@@ -575,7 +575,7 @@ datetime    lastBarTime = 0;
 int         minBarsRequired;
 
 //--- Indicator Handles
-int ema_handle, macd_handle, rsi_handle, stoch_handle, atr_handle;
+int ema_handle, rsi_handle, stoch_handle, atr_handle; // macd_handle removed
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -598,12 +598,12 @@ int OnInit()
 
    //--- Initialize all indicators needed for features
    ema_handle = iMA(_Symbol, _Period, InpMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   macd_handle = iMACD(_Symbol, _Period, InpMACDFast, InpMACDSlow, InpMACDSignal, PRICE_CLOSE);
+   // macd_handle = iMACD(_Symbol, _Period, InpMACDFast, InpMACDSlow, InpMACDSignal, PRICE_CLOSE);
    rsi_handle = iRSI(_Symbol, _Period, InpRSIPeriod, PRICE_CLOSE);
    stoch_handle = iStochastic(_Symbol, _Period, InpStochK, InpStochD, InpStochSlowing, MODE_SMA, STO_LOWHIGH);
    atr_handle = iATR(_Symbol, _Period, InpATRPeriod);
 
-   if(ema_handle < 0 || macd_handle < 0 || rsi_handle < 0 || stoch_handle < 0 || atr_handle < 0)
+   if(ema_handle < 0 || rsi_handle < 0 || stoch_handle < 0 || atr_handle < 0)
      {{
       printf("Error initializing one or more indicators.");
       return(INIT_FAILED);
@@ -619,7 +619,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {{
    IndicatorRelease(ema_handle);
-   IndicatorRelease(macd_handle);
+   // IndicatorRelease(macd_handle);
    IndicatorRelease(rsi_handle);
    IndicatorRelease(stoch_handle);
    IndicatorRelease(atr_handle);
@@ -723,7 +723,7 @@ string BuildJsonPayload()
    string payload = "{{\\"features\\": [";
    
    // Buffers for all features
-   double ema[], macd_main[], macd_hist[], macd_sig[], rsi[], stoch_k[], stoch_d[], atr_val[];
+   double ema[], rsi[], stoch_k[], stoch_d[], atr_val[]; // MACD arrays removed
    MqlRates rates[];
 
    // Copy data for the entire look_back period
@@ -731,9 +731,9 @@ string BuildJsonPayload()
    
    // Patiently check if data is ready. If not, abort and wait for the next tick.
    if(CopyBuffer(ema_handle, 0, 0, data_to_copy, ema) < data_to_copy ||
-      CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy ||
-      CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
-      CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
+      // CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy ||
+      // CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
+      // CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
       CopyBuffer(rsi_handle, 0, 0, data_to_copy, rsi) < data_to_copy ||
       CopyBuffer(stoch_handle, 0, 0, data_to_copy, stoch_k) < data_to_copy ||
       CopyBuffer(stoch_handle, 1, 0, data_to_copy, stoch_d) < data_to_copy ||
@@ -748,11 +748,8 @@ string BuildJsonPayload()
      {{
       double atr_perc = (rates[i].close > 0) ? (atr_val[i] / rates[i].close) * 100 : 0;
       string feature_set = StringFormat(
-          "{{ \\"EMA_{'d'}\\":%.5f, \\"MACD_{'d'}_{'d'}_{'d'}\\":%.5f, \\"MACDh_{'d'}_{'d'}_{'d'}\\":%.5f, \\"MACDs_{'d'}_{'d'}_{'d'}\\":%.5f, \\"RSI_{'d'}\\":%.5f, \\"STOCHk_{'d'}_{'d'}_{'d'}\\":%.5f, \\"STOCHd_{'d'}_{'d'}_{'d'}\\":%.5f, \\"ATRr_{'d'}\\":%.5f }}",
+          "{{ \\"EMA_{'d'}\\":%.5f, \\"RSI_{'d'}\\":%.5f, \\"STOCHk_{'d'}_{'d'}_{'d'}\\":%.5f, \\"STOCHd_{'d'}_{'d'}_{'d'}\\":%.5f, \\"ATRr_{'d'}\\":%.5f }}",
           InpMAPeriod, ema[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_main[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_hist[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_sig[i],
           InpRSIPeriod, rsi[i],
           InpStochK, InpStochD, InpStochSlowing, stoch_k[i],
           InpStochK, InpStochD, InpStochSlowing, stoch_d[i],

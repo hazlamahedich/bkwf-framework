@@ -3,7 +3,15 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import argparse
+import warnings
 from ml_backtester.agents.coordinator_agent import CoordinatorAgent
+
+# Suppress the specific UserWarning from pandas_ta
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pkg_resources is deprecated as an API.*"
+)
 
 def main():
     """

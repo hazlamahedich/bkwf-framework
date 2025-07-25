@@ -20,9 +20,9 @@ input int    InpLookBack     = 96;      // Model Look-back period
 
 //--- Indicator Parameters (must match training)
 input int    InpMAPeriod     = 200;
-input int    InpMACDFast     = 12;
-input int    InpMACDSlow     = 26;
-input int    InpMACDSignal   = 9;
+// input int    InpMACDFast     = 12;
+// input int    InpMACDSlow     = 26;
+// input int    InpMACDSignal   = 9;
 input int    InpRSIPeriod    = 14;
 input int    InpStochK       = 14;
 input int    InpStochD       = 3;
@@ -36,7 +36,7 @@ datetime    lastBarTime = 0;
 int         minBarsRequired;
 
 //--- Indicator Handles
-int ema_handle, macd_handle, rsi_handle, stoch_handle, atr_handle;
+int ema_handle, rsi_handle, stoch_handle, atr_handle; // macd_handle removed
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -59,12 +59,12 @@ int OnInit()
 
    //--- Initialize all indicators needed for features
    ema_handle = iMA(_Symbol, _Period, InpMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   macd_handle = iMACD(_Symbol, _Period, InpMACDFast, InpMACDSlow, InpMACDSignal, PRICE_CLOSE);
+   // macd_handle = iMACD(_Symbol, _Period, InpMACDFast, InpMACDSlow, InpMACDSignal, PRICE_CLOSE);
    rsi_handle = iRSI(_Symbol, _Period, InpRSIPeriod, PRICE_CLOSE);
    stoch_handle = iStochastic(_Symbol, _Period, InpStochK, InpStochD, InpStochSlowing, MODE_SMA, STO_LOWHIGH);
    atr_handle = iATR(_Symbol, _Period, InpATRPeriod);
 
-   if(ema_handle < 0 || macd_handle < 0 || rsi_handle < 0 || stoch_handle < 0 || atr_handle < 0)
+   if(ema_handle < 0 || rsi_handle < 0 || stoch_handle < 0 || atr_handle < 0)
      {
       printf("Error initializing one or more indicators.");
       return(INIT_FAILED);
@@ -80,7 +80,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    IndicatorRelease(ema_handle);
-   IndicatorRelease(macd_handle);
+   // IndicatorRelease(macd_handle);
    IndicatorRelease(rsi_handle);
    IndicatorRelease(stoch_handle);
    IndicatorRelease(atr_handle);
@@ -184,7 +184,7 @@ string BuildJsonPayload()
    string payload = "{\"features\": [";
    
    // Buffers for all features
-   double ema[], macd_main[], macd_hist[], macd_sig[], rsi[], stoch_k[], stoch_d[], atr_val[];
+   double ema[], rsi[], stoch_k[], stoch_d[], atr_val[]; // MACD arrays removed
    MqlRates rates[];
 
    // Copy data for the entire look_back period
@@ -192,9 +192,9 @@ string BuildJsonPayload()
    
    // Patiently check if data is ready. If not, abort and wait for the next tick.
    if(CopyBuffer(ema_handle, 0, 0, data_to_copy, ema) < data_to_copy ||
-      CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy ||
-      CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
-      CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
+      // CopyBuffer(macd_handle, 0, 0, data_to_copy, macd_main) < data_to_copy ||
+      // CopyBuffer(macd_handle, 2, 0, data_to_copy, macd_hist) < data_to_copy ||
+      // CopyBuffer(macd_handle, 1, 0, data_to_copy, macd_sig) < data_to_copy ||
       CopyBuffer(rsi_handle, 0, 0, data_to_copy, rsi) < data_to_copy ||
       CopyBuffer(stoch_handle, 0, 0, data_to_copy, stoch_k) < data_to_copy ||
       CopyBuffer(stoch_handle, 1, 0, data_to_copy, stoch_d) < data_to_copy ||
@@ -209,11 +209,8 @@ string BuildJsonPayload()
      {
       double atr_perc = (rates[i].close > 0) ? (atr_val[i] / rates[i].close) * 100 : 0;
       string feature_set = StringFormat(
-          "{ \"EMA_d\":%.5f, \"MACD_d_d_d\":%.5f, \"MACDh_d_d_d\":%.5f, \"MACDs_d_d_d\":%.5f, \"RSI_d\":%.5f, \"STOCHk_d_d_d\":%.5f, \"STOCHd_d_d_d\":%.5f, \"ATRr_d\":%.5f }",
+          "{ \"EMA_d\":%.5f, \"RSI_d\":%.5f, \"STOCHk_d_d_d\":%.5f, \"STOCHd_d_d_d\":%.5f, \"ATRr_d\":%.5f }",
           InpMAPeriod, ema[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_main[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_hist[i],
-          InpMACDFast, InpMACDSlow, InpMACDSignal, macd_sig[i],
           InpRSIPeriod, rsi[i],
           InpStochK, InpStochD, InpStochSlowing, stoch_k[i],
           InpStochK, InpStochD, InpStochSlowing, stoch_d[i],
