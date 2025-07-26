@@ -22,7 +22,7 @@ class CnnLstmStrategy(BaseStrategy):
         """
         super().__init__(config)
         self.model_config = config.get('modeling', {})
-        self.model_path = Path(self.model_config.get('model_save_path', 'ml_backtester/models/trained_model_pytorch'))
+        self.model_path = Path(self.model_config.get('model_save_path', 'bkwf_framework/models/trained_model_pytorch'))
         self.look_back = self.model_config.get('look_back', 60)
         self.model_type = self.model_config.get('model_type', 'cnn_lstm')
         self.use_enhanced_model = self.model_config.get('use_enhanced_model', False)

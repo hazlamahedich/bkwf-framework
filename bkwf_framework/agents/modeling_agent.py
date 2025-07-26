@@ -25,7 +25,7 @@ class ModelingAgent:
         Initializes the ModelingAgent.
         """
         self.config = config.get('modeling', {})
-        self.model_path = Path(self.config.get('model_save_path', 'ml_backtester/models/trained_model_pytorch'))
+        self.model_path = Path(self.config.get('model_save_path', 'bkwf_framework/models/trained_model_pytorch'))
         self.model_path.mkdir(parents=True, exist_ok=True)
         
         self.model_type = self.config.get('model_type', 'cnn_lstm') # 'cnn_lstm' or 'cnn_lightgbm'

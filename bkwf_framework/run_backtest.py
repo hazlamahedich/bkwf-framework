@@ -4,7 +4,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import argparse
 import warnings
-from ml_backtester.agents.coordinator_agent import CoordinatorAgent
+from bkwf_framework.agents.coordinator_agent import CoordinatorAgent
 
 # Suppress the specific UserWarning from pandas_ta
 warnings.filterwarnings(
@@ -21,7 +21,7 @@ def main():
     parser.add_argument(
         '--config',
         type=str,
-        default='ml_backtester/configs/config.yaml',
+        default='bkwf_framework/configs/config.yaml',
         help='Path to the configuration YAML file.'
     )
     parser.add_argument(

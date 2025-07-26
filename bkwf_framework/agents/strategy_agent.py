@@ -27,7 +27,7 @@ class StrategyAgent:
 
     def _load_strategy_class(self) -> BaseStrategy:
         """Dynamically imports and returns the strategy class."""
-        module_path = f"ml_backtester.strategies.{self.strategy_name}"
+        module_path = f"bkwf_framework.strategies.{self.strategy_name}"
         class_name = "".join(word.capitalize() for word in self.strategy_name.split('_')) + "Strategy"
         
         try:
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     from ..agents.data_agent import DataAgent
     from ..agents.feature_engineering_agent import FeatureEngineeringAgent
 
-    mock_data_config = {'data_path': 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'}
+    mock_data_config = {'data_path': 'bkwf_framework/data/EURUSD_m15_2022_2025.parquet'}
     mock_feature_config = {
         'feature_engineering': {
             'indicators': [

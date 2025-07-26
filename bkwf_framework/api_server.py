@@ -8,12 +8,12 @@ import torch
 import joblib
 import logging
 
-from ml_backtester.models.enhanced_cnn_lstm_model import EnhancedCNNLSTMModel
+from bkwf_framework.models.enhanced_cnn_lstm_model import EnhancedCNNLSTMModel
 
 app = Flask(__name__)
 
 # --- Configuration ---
-MODEL_PATH = Path('ml_backtester/models/trained_model_pytorch')
+MODEL_PATH = Path('bkwf_framework/models/trained_model_pytorch')
 LOOK_BACK = 96 # This should match the model's training configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

@@ -71,7 +71,7 @@ if __name__ == '__main__':
     # Assumes the script is run from the root of the `bkwf framework` directory.
     
     # Create a data directory for the parquet files if it doesn't exist
-    data_dir = Path('ml_backtester/data')
+    data_dir = Path('bkwf_framework/data')
     data_dir.mkdir(exist_ok=True)
 
     # Define paths for the historical data

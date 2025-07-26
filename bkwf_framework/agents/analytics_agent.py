@@ -18,7 +18,7 @@ class AnalyticsAgent:
         """
         self.config = config
         self.analytics_config = self.config.get('analytics', {})
-        self.report_path = Path(self.analytics_config.get('report_path', 'ml_backtester/reports'))
+        self.report_path = Path(self.analytics_config.get('report_path', 'bkwf_framework/reports'))
         self.report_path.mkdir(exist_ok=True)
         self.symbol = self.config.get('symbol')
         self.timeframe = self.config.get('timeframe')
@@ -148,11 +148,11 @@ if __name__ == '__main__':
     from ..agents.strategy_agent import StrategyAgent
     from ..agents.backtesting_agent import BacktestingAgent
 
-    mock_data_config = {'data_path': 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'}
+    mock_data_config = {'data_path': 'bkwf_framework/data/EURUSD_m15_2022_2025.parquet'}
     mock_feature_config = {'feature_engineering': {'indicators': [{'name': 'ema', 'params': {'length': 200}}, {'name': 'macd'}, {'name': 'stoch'}]}}
     mock_strategy_config = {'strategy': {'name': 'triple_threat'}}
     mock_backtest_config = {'backtesting': {'mode': 'vectorized'}}
-    mock_analytics_config = {'analytics': {'report_path': 'ml_backtester/reports'}}
+    mock_analytics_config = {'analytics': {'report_path': 'bkwf_framework/reports'}}
 
     try:
         df = DataAgent(config=mock_data_config).execute()

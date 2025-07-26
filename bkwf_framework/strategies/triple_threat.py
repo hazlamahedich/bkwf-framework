@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
     # 2. Define mock configurations
     mock_data_config = {
-        'data_path': 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'
+        'data_path': 'bkwf_framework/data/EURUSD_m15_2022_2025.parquet'
     }
     
     mock_feature_config = {

@@ -41,7 +41,7 @@ def main():
     Main function to run the walk-forward optimization.
     """
     parser = argparse.ArgumentParser(description="Run Walk-Forward Optimization for a trading strategy.")
-    parser.add_argument('--config', type=str, default='ml_backtester/configs/config.yaml', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='bkwf_framework/configs/config.yaml', help='Path to the configuration file.')
     args = parser.parse_args()
 
     # --- Load Configuration ---
@@ -91,7 +91,7 @@ def main():
                 logging.info(f"{key.replace('_', ' ').title()}: {value}")
         
         # Save the final combined trades and summary report
-        reports_path = Path(config.get('reporting', {}).get('report_path', 'ml_backtester/reports'))
+        reports_path = Path(config.get('reporting', {}).get('report_path', 'bkwf_framework/reports'))
         reports_path.mkdir(exist_ok=True)
         
         trades_path = reports_path / f"{strategy_name}_walk_forward_trades.csv"

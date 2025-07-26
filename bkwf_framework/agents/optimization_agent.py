@@ -179,7 +179,7 @@ if __name__ == '__main__':
             # For now, we just need to show Optuna can pass them.
             self.ema_period = config.get('strategy', {}).get('ema_period', 200)
 
-    mock_data_config = {'data_path': 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'}
+    mock_data_config = {'data_path': 'bkwf_framework/data/EURUSD_m15_2022_2025.parquet'}
     mock_feature_config = {'feature_engineering': {'indicators': [{'name': 'ema', 'params': {'length': 200}}, {'name': 'macd'}, {'name': 'stoch'}]}}
     
     mock_opt_config = {

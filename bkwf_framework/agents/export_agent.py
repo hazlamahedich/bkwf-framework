@@ -17,7 +17,7 @@ class ExportAgent:
             config (Dict[str, Any]): Configuration dictionary.
         """
         self.config = config
-        self.export_path = Path(self.config.get('export', {}).get('path', 'ml_backtester/exports'))
+        self.export_path = Path(self.config.get('export', {}).get('path', 'bkwf_framework/exports'))
         self.export_path.mkdir(exist_ok=True)
         logging.info(f"ExportAgent initialized. Export path: '{self.export_path}'")
 

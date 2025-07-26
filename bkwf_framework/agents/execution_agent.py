@@ -63,7 +63,7 @@ if __name__ == '__main__':
     from ..agents.strategy_agent import StrategyAgent
     from ..agents.risk_management_agent import RiskManagementAgent
 
-    mock_data_config = {'data_path': 'ml_backtester/data/EURUSD_m15_2022_2025.parquet'}
+    mock_data_config = {'data_path': 'bkwf_framework/data/EURUSD_m15_2022_2025.parquet'}
     mock_feature_config = {'feature_engineering': {'indicators': [{'name': 'ema', 'params': {'length': 200}}, {'name': 'macd'}, {'name': 'stoch'}, {'name': 'atr'}]}}
     mock_strategy_config = {'strategy': {'name': 'triple_threat'}}
     mock_risk_config = {'risk_management': {'risk_per_trade': 0.01}}
